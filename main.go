@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 )
 
 // This store will be used to save user authentication
@@ -25,27 +26,26 @@ const (
 	// A state for performing the OAuth 2.0 flow. This is usually not part of a consent app, but in order for the demo
 	// to make sense, it performs the OAuth 2.0 authorize code flow.
 	state = "demostatedemostatedemo"
-
-	consentHost = "http://localhost"
-	consentPort = 4445
-
-	hydraHost         = "http://localhost"
-	hydraPort         = 4444
-	hydraClientID     = "admin"
-	hydraClientSecret = "demo-password"
 )
 
 // This is the Hydra SDK
 var client *sdk.Client
 
+var consentURL = "http://localhost:4444"
+var consentPort = "4445"
+var hydraURL = "http://localhost:4445"
+
 func main() {
 	var err error
 
+	consentURL = os.Getenv("CONSENT_URL")
+	consentPort = os.Getenv("CONSENT_PORT")
+
 	// Initialize the hydra SDK. The defaults work if you started hydra as described in the README.md
 	client, err = sdk.Connect(
-		sdk.ClientID(env.Getenv("HYDRA_CLIENT_ID", hydraClientID)),
-		sdk.ClientSecret(env.Getenv("HYDRA_CLIENT_SECRET", hydraClientSecret)),
-		sdk.ClusterURL(env.Getenv("HYDRA_CLUSTER_URL", fmt.Sprintf("%s:%d", hydraHost, hydraPort))),
+		sdk.ClientID(env.Getenv("HYDRA_CLIENT_ID", os.Getenv("HYDRA_CLIENT_ID"))),
+		sdk.ClientSecret(env.Getenv("HYDRA_CLIENT_SECRET", os.Getenv("HYDRA_CLIENT_SECRET"))),
+		sdk.ClusterURL(env.Getenv("HYDRA_CLUSTER_URL", os.Getenv("HYDRA_URL"))),
 	)
 	if err != nil {
 		panic(err)
@@ -59,8 +59,8 @@ func main() {
 	r.HandleFunc("/callback", handleCallback)
 
 	// Start http server
-	log.Printf("Listening to port %d", consentPort)
-	err = http.ListenAndServe(fmt.Sprintf(":%d", consentPort), r)
+	log.Printf("Listening to %s", consentURL)
+	err = http.ListenAndServe(fmt.Sprintf(":%s", consentPort), r)
 	if err != nil {
 		panic(err)
 	}
@@ -71,7 +71,7 @@ func main() {
 // page a user sees.
 func handleHome(w http.ResponseWriter, _ *http.Request) {
 	log.Printf("handleHome")
-	var authUrl = client.OAuth2Config(fmt.Sprintf("%s:%d/callback", consentHost, consentPort), "offline", "openid").AuthCodeURL(state) + "&nonce=" + state
+	var authUrl = client.OAuth2Config(fmt.Sprintf("%s/callback", consentURL), "offline", "openid").AuthCodeURL(state) + "&nonce=" + state
 	renderTemplate(w, "home.html", authUrl)
 }
 
@@ -194,7 +194,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Redirect the user back to the consent endpoint. In a normal app, you would probably
 		// add some logic here that is triggered when the user actually performs authentication and is not
 		// part of the consent flow.
-		http.Redirect(w, r, fmt.Sprintf("%s:%d/consent?challenge=", consentHost, consentPort)+challenge, http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("%s/consent?challenge=", consentURL)+challenge, http.StatusFound)
 		return
 	}
 
@@ -210,7 +210,7 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 	// in the real world you should check the state query parameter, but this is omitted for brevity reasons.
 
 	// Exchange the access code for an access (and optionally) a refresh token
-	token, err := client.OAuth2Config(fmt.Sprintf("%s:%d/callback", consentHost, consentPort)).Exchange(context.Background(), r.URL.Query().Get("code"))
+	token, err := client.OAuth2Config(fmt.Sprintf("%s/callback", consentURL)).Exchange(context.Background(), r.URL.Query().Get("code"))
 	if err != nil {
 		http.Error(w, errors.Wrap(err, "Could not exhange token").Error(), http.StatusBadRequest)
 		return
